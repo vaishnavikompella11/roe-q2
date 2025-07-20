@@ -1,34 +1,42 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from PIL import Image
-import pytesseract
-import io
+import requests
 import re
 
 app = FastAPI()
 
-# Enable CORS so Swagger UI & browsers work without "Failed to fetch"
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins (can restrict if needed)
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+OCR_SPACE_API_KEY = "helloworld"  # Free API key provided by ocr.space for testing
+
 @app.post("/captcha")
 async def solve_captcha(file: UploadFile = File(...)):
     try:
-        # Read image file bytes and open it
+        # Read file contents
         image_bytes = await file.read()
-        image = Image.open(io.BytesIO(image_bytes))
 
-        # Extract text using OCR
-        extracted_text = pytesseract.image_to_string(image)
+        # Send image to OCR.space API
+        response = requests.post(
+            "https://api.ocr.space/parse/image",
+            files={"file": (file.filename, image_bytes)},
+            data={"apikey": OCR_SPACE_API_KEY, "language": "eng"}
+        )
 
-        # Find 8-digit * 8-digit multiplication pattern
-        match = re.search(r'(\d{8})\s*[*xX×]\s*(\d{8})', extracted_text)
+        if response.status_code != 200:
+            raise HTTPException(status_code=500, detail="OCR API failed")
+
+        result_json = response.json()
+        parsed_text = result_json["ParsedResults"][0]["ParsedText"]
+
+        # Extract multiplication expression
+        match = re.search(r'(\d{8})\s*[*xX×]\s*(\d{8})', parsed_text)
         if not match:
             raise HTTPException(status_code=400, detail="No valid multiplication problem found in image.")
 
@@ -42,5 +50,5 @@ async def solve_captcha(file: UploadFile = File(...)):
         })
 
     except Exception as e:
-        print(f"Error occurred: {e}")  # This will show in Render logs
+        print(f"Error occurred: {e}")
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
