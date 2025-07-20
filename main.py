@@ -6,6 +6,7 @@ import re
 
 app = FastAPI()
 
+# Allow CORS (important for Swagger or frontend use)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -14,15 +15,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-OCR_SPACE_API_KEY = "helloworld"  # Free API key provided by ocr.space for testing
+# OCR.space free key for testing
+OCR_SPACE_API_KEY = "helloworld"  # Do not change this
+
+@app.get("/")
+def root():
+    return {"message": "POST an image to /captcha to extract and solve the multiplication problem."}
 
 @app.post("/captcha")
 async def solve_captcha(file: UploadFile = File(...)):
     try:
-        # Read file contents
+        # Read the uploaded image bytes
         image_bytes = await file.read()
 
-        # Send image to OCR.space API
+        # Call OCR.space API
         response = requests.post(
             "https://api.ocr.space/parse/image",
             files={"file": (file.filename, image_bytes)},
@@ -33,10 +39,13 @@ async def solve_captcha(file: UploadFile = File(...)):
             raise HTTPException(status_code=500, detail="OCR API failed")
 
         result_json = response.json()
-        parsed_text = result_json["ParsedResults"][0]["ParsedText"]
 
-        # Extract multiplication expression
-        match = re.search(r'(\d{8})\s*[*xX×]\s*(\d{8})', parsed_text)
+        # Extract text from OCR
+        parsed_text = result_json["ParsedResults"][0]["ParsedText"]
+        print("OCR Text:", parsed_text)  # Debug in logs
+
+        # Use flexible regex to extract multiplication of 6–10 digit numbers
+        match = re.search(r'(\d{6,10})\s*[*xX××x]\s*(\d{6,10})', parsed_text)
         if not match:
             raise HTTPException(status_code=400, detail="No valid multiplication problem found in image.")
 
@@ -50,5 +59,5 @@ async def solve_captcha(file: UploadFile = File(...)):
         })
 
     except Exception as e:
-        print(f"Error occurred: {e}")
+        print(f"Error occurred: {e}")  # Show in Render logs
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
