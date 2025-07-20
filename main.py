@@ -1,5 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 import pytesseract
 import io
@@ -7,17 +8,26 @@ import re
 
 app = FastAPI()
 
+# Enable CORS so Swagger UI & browsers work without "Failed to fetch"
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins (can restrict if needed)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 @app.post("/captcha")
 async def solve_captcha(file: UploadFile = File(...)):
     try:
-        # Read and load the image
+        # Read image file bytes and open it
         image_bytes = await file.read()
         image = Image.open(io.BytesIO(image_bytes))
 
-        # Use OCR to extract text
+        # Extract text using OCR
         extracted_text = pytesseract.image_to_string(image)
 
-        # Look for multiplication problem, e.g., 12345678 * 87654321
+        # Find 8-digit * 8-digit multiplication pattern
         match = re.search(r'(\d{8})\s*[*xX×]\s*(\d{8})', extracted_text)
         if not match:
             raise HTTPException(status_code=400, detail="No valid multiplication problem found in image.")
@@ -32,4 +42,5 @@ async def solve_captcha(file: UploadFile = File(...)):
         })
 
     except Exception as e:
+        print(f"Error occurred: {e}")  # This will show in Render logs
         raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
